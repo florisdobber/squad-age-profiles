@@ -1,0 +1,174 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Create a list of URLs for every Eredivisie club page
+```{r}
+library('rvest')
+URL = "https://www.transfermarkt.com/eredivisie/startseite/wettbewerb/NL1"
+WS = read_html(URL)
+URLs = WS %>% html_nodes(".hide-for-pad .vereinprofil_tooltip") %>% html_attr("href") %>% as.character()
+URLs <- paste0("http://www.transfermarkt.com",URLs)
+```
+
+Create a data frame to store the data from page1 (name, DoB, contract end, market value)
+```{r}
+page1 = data.frame(
+  playerName1 = character(),
+  DoB = character(),
+  #contractEnd = character(),
+  marketValue = numeric()
+)
+```
+
+Create a data frame to store the data from page2 
+(club name, name, age, position, min. played, min. available, %)
+```{r}
+page2 = data.frame(
+  clubName = character(), 
+  playerName2 = character(),
+  playerAge = numeric(),
+  position = character(),
+  minPlayed = numeric(),
+  minAvailable = numeric(),
+  minPer = numeric()
+)
+```
+
+Create a dataframe to store the final data set
+```{r}
+finalData = data.frame(
+  clubName = character(), 
+  playerName = character(),
+  DoB = character(),
+  playerAge = numeric(),
+  position = character(),
+  #contractEnd = character(),
+  minPlayed = numeric(),
+  minAvailable = numeric(),
+  minPer = numeric(),
+  marketValue = numeric()
+)
+```
+
+
+Run the loop to collect all the data
+```{r}
+for (i in URLs) {
+  URL1 = i #detailed squad overview 
+  URL1 = paste0(URL1, "/plus/1")
+  URL2 = i #squad stats 
+  URL2 = sub("startseite", "leistungsdaten", URL2) 
+  URL2 = substr(URL2, 0, nchar(URL2) - 14)
+  
+  WS1 = read_html(URL1)
+  WS2 = read_html(URL2)
+  
+  playerName1 = WS1 %>%
+    html_nodes("#yw1 .spielprofil_tooltip") %>% 
+    html_text() %>%
+    as.character()
+  playerName1 = playerName1[seq(1, length(playerName1), 2)]
+  
+  DoB = WS1 %>%
+    html_nodes(".zentriert") %>%
+    html_text() %>%
+    as.character()
+  DoB = DoB[seq(5, 5 + (3 * (length(playerName1) -1)), 3)]
+  DoB = substr(DoB, 0, nchar(DoB) - 5)
+  DoB = as.Date(DoB, "%b %d, %Y")
+  
+  contractEnd = WS1 %>%
+    html_nodes("#yw1 .spielprofil_tooltip") %>%
+    html_text()
+  
+  marketValue = WS1 %>%
+    html_nodes(".rechts.hauptlink") %>%
+    html_text() %>%
+    as.character()
+  marketValue = substr(marketValue, 2, nchar(marketValue) - 2)
+  mult = substr(marketValue, nchar(marketValue), nchar(marketValue))
+  marketValue = substr(marketValue, 0, nchar(marketValue) - 1) %>% as.numeric()
+  for (x in seq(1, length(mult))) {
+    if (mult[x] == "m") {
+      marketValue[x] = marketValue[x] * 1000000
+    } else if (mult[x] == "k") {
+      marketValue[x] = marketValue[x] * 1000
+    }
+  }
+  
+  position = WS2 %>%
+    html_nodes(".inline-table tr+ tr td") %>%
+    html_text() %>%
+    as.character()
+  
+  clubName = WS2 %>% 
+    html_nodes(".dataName span") %>% 
+    html_text() %>% 
+    as.character()
+  
+  playerName = WS2 %>% 
+    html_nodes("#yw1 .spielprofil_tooltip") %>% 
+    html_text() %>% 
+    as.character()
+  playerName = playerName[seq(1, length(playerName), 2)]
+  
+  playerAge = WS2 %>% 
+    html_nodes(".posrela+ .zentriert") %>% 
+    html_text() %>% 
+    as.numeric()
+  
+  minPlayed = WS2 %>% 
+    html_nodes("td.rechts") %>% 
+    html_text() %>% 
+    as.character()
+  minPlayed = gsub("[.]", "", minPlayed) 
+  minPlayed = substr(minPlayed, 0, nchar(minPlayed) - 1)  %>% 
+    as.numeric()
+  minPlayed[is.na(minPlayed)] = 0
+  
+  minAvailable = WS2 %>% 
+    html_node("p.content") %>%
+    html_text() %>%
+    as.character()
+  minAvailable = substr(minAvailable, 
+                        nchar(minAvailable) - 81, 
+                        nchar(minAvailable) - 80) %>% 
+    as.numeric()
+  minAvailable = minAvailable * 90
+  
+  minPer = round(minPlayed / minAvailable, 3)
+  
+  temp1 = data.frame(
+    playerName1,
+    DoB,
+    marketValue
+  )
+  
+  temp2 = data.frame(
+    clubName, 
+    playerName, 
+    playerAge, 
+    position, 
+    minPlayed, 
+    minAvailable, 
+    minPer
+  )
+  
+  page1 = rbind(page1, temp1)
+  page2 = rbind(page2, temp2)
+  cat("*")
+}
+
+finalData = merge(page2, page1, by.x = "playerName", by.y = "playerName1")
+```
+
+Export the data to a CSV
+```{r}
+write.csv(
+  finalData, 
+  'C:\\Users\\fdobb\\Local\\SAP project\\ageprofiledata.csv',
+  row.names = FALSE
+)
+```
